@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from src.data_loader import load_csv
 
 st.set_page_config(
     page_title="Data Analyst AI Agent",
@@ -35,7 +36,7 @@ if uploaded_file is None:
 
 else:
     try:
-        df = pd.read_csv(uploaded_file)
+        df = load_csv(uploaded_file)
 
         if df.empty or len(df.columns) == 0:
             st.error("The uploaded CSV contains no data.")
