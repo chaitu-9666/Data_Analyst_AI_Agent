@@ -43,7 +43,7 @@ def load_csv(file) -> pd.DataFrame:
     if len(df.columns) == 0:
         raise ValueError("The CSV contains no columns.")
 
-    if df.columns.astype(str).str.strip().eq("").any():
+    if (df.columns.astype(str).str.strip() == "").any():
         raise ValueError("The CSV contains a blank column name.")
 
     return df
