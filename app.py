@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from src.analysis_tools import analyze_question
 from src.data_loader import load_csv
 
 st.set_page_config(
@@ -44,11 +45,12 @@ else:
 
         st.success("Dataset uploaded successfully!")
 
-        overview, preview, missing, charts = st.tabs([
+        overview, preview, missing, charts, questions = st.tabs([
             "Overview",
             "Data Preview",
             "Missing Values",
-            "Visualizations"
+            "Visualizations",
+            "Ask a question",
         ])
 
         with overview:
@@ -186,6 +188,32 @@ else:
                         "At least two numeric columns are required."
                     )
 
+        with questions:
+            st.subheader("Ask about your dataset")
+            st.caption(
+                "This starter agent uses a fixed set of safe analysis operations; "
+                "it does not execute code from your question."
+            )
+            with st.form("question_form"):
+                question = st.text_input(
+                    "Ask a question",
+                    placeholder="For example: What is the average salary?",
+                )
+                submitted = st.form_submit_button("Analyze")
+
+            if submitted:
+                result = analyze_question(df, question)
+                st.write(result.answer)
+                if result.data is not None:
+                    st.dataframe(result.data, use_container_width=True)
+                if result.chart and result.data is not None:
+                    fig = px.bar(
+                        result.data,
+                        x=result.data.columns[0],
+                        y=result.data.columns[1],
+                        title=result.answer,
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
     except Exception as error:
         st.error(f"Unable to read or analyse this CSV: {error}")
-
