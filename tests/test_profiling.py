@@ -6,7 +6,8 @@ from src.profiling import (
     get_column_profile,
     detect_outliers_iqr,
     detect_outliers_advanced,
-    calculate_data_quality_score
+    calculate_data_quality_score,
+    generate_data_quality_insights
 )
 
 
@@ -174,3 +175,106 @@ def test_data_quality_without_numeric_columns():
     assert "outlier_health" not in result["component_scores"]
 
     assert result["overall_score"] == 100
+
+
+
+# ==========================================================
+# STEP 6: AUTOMATED DATA QUALITY INSIGHTS TESTS
+# ==========================================================
+
+def test_generate_data_quality_insights():
+
+    df = sample_data()
+
+    result = generate_data_quality_insights(df)
+
+    assert 0 <= result["overall_score"] <= 100
+
+    assert result["overall_grade"] in [
+        "Excellent", "Good", "Fair", "Poor"
+    ]
+
+    assert isinstance(result["summary"], str)
+
+    assert result["total_insights"] == len(result["insights"])
+
+    assert len(result["insights"]) > 0
+
+    assert len(result["recommendations"]) > 0
+
+
+def test_insights_detect_missing_values():
+
+    df = pd.DataFrame({
+        "name": ["A", "B", "C"],
+        "age": [20, None, 30]
+    })
+
+    result = generate_data_quality_insights(df)
+
+    categories = [
+        item["category"] for item in result["insights"]
+    ]
+
+    assert "Missing Values" in categories
+
+
+def test_insights_detect_duplicate_rows():
+
+    df = pd.DataFrame({
+        "name": ["A", "B", "B", "D"],
+        "city": ["London", "Paris", "Paris", "Rome"]
+    })
+
+    result = generate_data_quality_insights(df)
+
+    categories = [
+        item["category"] for item in result["insights"]
+    ]
+
+    assert "Duplicate Records" in categories
+
+
+def test_insights_detect_outliers():
+
+    df = sample_data()
+
+    result = generate_data_quality_insights(df)
+
+    categories = [
+        item["category"] for item in result["insights"]
+    ]
+
+    assert "Potential Outliers" in categories
+
+
+def test_insights_for_clean_dataset():
+
+    df = pd.DataFrame({
+        "name": ["A", "B", "C"],
+        "city": ["London", "Paris", "Rome"]
+    })
+
+    result = generate_data_quality_insights(df)
+
+    assert result["total_insights"] == 0
+
+    assert len(result["strengths"]) > 0
+
+    assert result["overall_grade"] == "Excellent"
+
+
+def test_insights_invalid_threshold():
+
+    df = sample_data()
+
+    try:
+        generate_data_quality_insights(
+            df,
+            low_quality_threshold=150
+        )
+
+        assert False, "Expected ValueError"
+
+    except ValueError:
+        assert True

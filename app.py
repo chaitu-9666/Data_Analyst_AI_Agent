@@ -8,7 +8,9 @@ from src.data_loader import load_csv
 from src.profiling import (
     profile_dataset,
     get_column_profile,
-    detect_outliers_iqr
+    detect_outliers_iqr,
+    calculate_data_quality_score,
+    generate_data_quality_insights
 )
 
 
@@ -90,6 +92,10 @@ else:
         column_profile = get_column_profile(df)
 
         outlier_profile = detect_outliers_iqr(df)
+
+        quality_report = calculate_data_quality_score(df)
+
+        quality_insights = generate_data_quality_insights(df)
 
 
         # ==================================================
@@ -262,6 +268,99 @@ else:
             )
 
             st.divider()
+
+            # ----------------------------------------------
+            # DATA QUALITY SCORE
+            # ----------------------------------------------
+
+            st.subheader("Overall Data Quality Score")
+
+            score = quality_report["overall_score"]
+            grade = quality_report["overall_grade"]
+
+            c1, c2, c3 = st.columns(3)
+
+            c1.metric("Quality Score", f"{score}/100")
+            c2.metric("Quality Grade", grade)
+            c3.metric(
+                "Total Quality Issues",
+                quality_insights["total_insights"]
+            )
+
+            st.progress(score / 100)
+
+            st.info(quality_insights["summary"])
+
+            st.divider()
+
+
+            # ----------------------------------------------
+            # COLUMN QUALITY SCORES
+            # ----------------------------------------------
+
+            st.subheader("Column-wise Quality Scores")
+
+            st.dataframe(
+                quality_report["column_scores"],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.divider()
+
+
+            # ----------------------------------------------
+            # AUTOMATED DATA QUALITY INSIGHTS
+            # ----------------------------------------------
+
+            st.subheader("Automated Data Quality Insights")
+
+            if quality_insights["insights"]:
+
+                for insight in quality_insights["insights"]:
+
+                    with st.expander(
+                        f"{insight['severity']} | "
+                        f"{insight['category']} | "
+                        f"{insight['column'] or 'Dataset'}"
+                    ):
+
+                        st.write(insight["message"])
+
+            else:
+
+                st.success("No data quality issues detected!")
+
+
+            # ----------------------------------------------
+            # RECOMMENDATIONS
+            # ----------------------------------------------
+
+            st.subheader("Recommended Actions")
+
+            if quality_insights["recommendations"]:
+
+                for recommendation in quality_insights["recommendations"]:
+
+                    st.write(f"• {recommendation}")
+
+            else:
+
+                st.success("No corrective actions required.")
+
+
+            # ----------------------------------------------
+            # DATASET STRENGTHS
+            # ----------------------------------------------
+
+            st.subheader("Dataset Strengths")
+
+            for strength in quality_insights["strengths"]:
+
+                st.success(strength)
+
+            st.divider()
+
 
 
             # ----------------------------------------------

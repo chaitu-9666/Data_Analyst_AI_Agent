@@ -736,3 +736,254 @@ def calculate_data_quality_score(df: pd.DataFrame) -> dict:
         "column_scores": column_scores
 
     }
+
+
+
+# ==========================================================
+# 9. AUTOMATED DATA QUALITY INSIGHTS
+# ==========================================================
+
+def generate_data_quality_insights(
+    df: pd.DataFrame,
+    low_quality_threshold: float = 75.0,
+    high_missing_threshold: float = 20.0
+) -> dict:
+    """
+    Generate automated data quality insights and
+    recommendations using profiling and quality scores.
+    """
+
+    validate_dataframe(df)
+
+    if not 0 <= low_quality_threshold <= 100:
+        raise ValueError("Quality threshold must be between 0 and 100.")
+
+    if not 0 <= high_missing_threshold <= 100:
+        raise ValueError("Missing threshold must be between 0 and 100.")
+
+    # ------------------------------------------------------
+    # 1. GENERATE EXISTING QUALITY REPORT
+    # ------------------------------------------------------
+
+    quality_report = calculate_data_quality_score(df)
+
+    column_scores = quality_report["column_scores"]
+
+    insights = []
+    recommendations = []
+    strengths = []
+    issues = []
+
+    # ------------------------------------------------------
+    # 2. CHECK MISSING VALUES
+    # ------------------------------------------------------
+
+    missing_columns = column_scores[
+        column_scores["missing_count"] > 0
+    ]
+
+    for _, row in missing_columns.iterrows():
+
+        column = row["column"]
+        count = int(row["missing_count"])
+        percentage = float(row["missing_percentage"])
+
+        severity = (
+            "High" if percentage >= high_missing_threshold
+            else "Medium"
+        )
+
+        message = (
+            f"Column '{column}' contains {count} missing values "
+            f"({percentage}%)."
+        )
+
+        insights.append({
+            "category": "Missing Values",
+            "severity": severity,
+            "column": column,
+            "message": message
+        })
+
+        recommendations.append(
+            f"Review missing values in '{column}' and decide "
+            "whether to impute, retain or remove affected records."
+        )
+
+        issues.append(message)
+
+    if missing_columns.empty:
+        strengths.append("No missing values were detected.")
+
+    # ------------------------------------------------------
+    # 3. CHECK DUPLICATE ROWS
+    # ------------------------------------------------------
+
+    duplicate_count = quality_report["duplicate_rows"]
+
+    if duplicate_count > 0:
+
+        duplicate_percentage = round(
+            duplicate_count / len(df) * 100, 2
+        )
+
+        message = (
+            f"Found {duplicate_count} completely duplicated rows "
+            f"({duplicate_percentage}% of the dataset)."
+        )
+
+        insights.append({
+            "category": "Duplicate Records",
+            "severity": "Medium",
+            "column": None,
+            "message": message
+        })
+
+        recommendations.append(
+            "Review duplicated rows and remove only confirmed "
+            "unnecessary duplicates."
+        )
+
+        issues.append(message)
+
+    else:
+        strengths.append("No completely duplicated rows were detected.")
+
+    # ------------------------------------------------------
+    # 4. CHECK POTENTIAL OUTLIERS
+    # ------------------------------------------------------
+
+    outlier_results = detect_outliers_iqr(df)
+
+    if not outlier_results.empty:
+
+        for _, row in outlier_results.iterrows():
+
+            column = row["column"]
+            count = int(row["outlier_count"])
+            percentage = float(row["outlier_percentage"])
+
+            if count == 0:
+                continue
+
+            message = (
+                f"Column '{column}' contains {count} potential "
+                f"outliers ({percentage}%)."
+            )
+
+            insights.append({
+                "category": "Potential Outliers",
+                "severity": (
+                    "High" if percentage >= 10 else "Medium"
+                ),
+                "column": column,
+                "message": message
+            })
+
+            recommendations.append(
+                f"Investigate unusual values in '{column}' "
+                "before deciding whether they are errors or valid observations."
+            )
+
+            issues.append(message)
+
+    if outlier_results.empty or outlier_results[
+        "outlier_count"
+    ].sum() == 0:
+        strengths.append(
+            "No potential outliers were detected in eligible numerical columns."
+        )
+
+    # ------------------------------------------------------
+    # 5. CHECK LOW QUALITY COLUMNS
+    # ------------------------------------------------------
+
+    low_quality_columns = column_scores[
+        column_scores["quality_score"] < low_quality_threshold
+    ]
+
+    for _, row in low_quality_columns.iterrows():
+
+        column = row["column"]
+        score = float(row["quality_score"])
+        grade = row["quality_grade"]
+
+        message = (
+            f"Column '{column}' has a quality score of "
+            f"{score}/100 ({grade})."
+        )
+
+        insights.append({
+            "category": "Low Column Quality",
+            "severity": "High" if score < 60 else "Medium",
+            "column": column,
+            "message": message
+        })
+
+        recommendations.append(
+            f"Investigate missing values and potential anomalies "
+            f"in '{column}' to improve its quality."
+        )
+
+    # ------------------------------------------------------
+    # 6. DATASET QUALITY SUMMARY
+    # ------------------------------------------------------
+
+    overall_score = quality_report["overall_score"]
+    overall_grade = quality_report["overall_grade"]
+
+    if overall_grade == "Excellent":
+        summary = (
+            "The dataset has excellent overall quality. "
+            "Only minor checks may be necessary."
+        )
+
+    elif overall_grade == "Good":
+        summary = (
+            "The dataset has good overall quality, but some "
+            "issues should be reviewed before analysis."
+        )
+
+    elif overall_grade == "Fair":
+        summary = (
+            "The dataset has fair overall quality. "
+            "Several improvements are recommended before analysis."
+        )
+
+    else:
+        summary = (
+            "The dataset has poor overall quality. "
+            "Data cleaning and validation are strongly recommended."
+        )
+
+    if not insights:
+        strengths.append(
+            "No issues were identified by the configured quality checks."
+        )
+
+    # Remove duplicate recommendations while preserving order
+    recommendations = list(dict.fromkeys(recommendations))
+
+    return {
+
+        "overall_score": overall_score,
+
+        "overall_grade": overall_grade,
+
+        "summary": summary,
+
+        "total_insights": len(insights),
+
+        "insights": insights,
+
+        "issues": issues,
+
+        "recommendations": recommendations,
+
+        "strengths": strengths,
+
+        "column_scores": column_scores,
+
+        "quality_report": quality_report
+
+    }
