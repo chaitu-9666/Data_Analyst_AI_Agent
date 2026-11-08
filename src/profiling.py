@@ -1,6 +1,7 @@
 
 import re
 import pandas as pd
+import numpy as np
 
 
 # ==========================================================
@@ -341,3 +342,397 @@ def detect_outliers_iqr(df: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(results)
+
+# ==========================================================
+# 7. ADVANCED OUTLIER DETECTION
+# ==========================================================
+
+def detect_outliers_advanced(
+    df: pd.DataFrame,
+    z_threshold: float = 3.0,
+    modified_z_threshold: float = 3.5
+) -> pd.DataFrame:
+    """
+    Detect numerical outliers using three statistical methods:
+    1. IQR
+    2. Z-Score
+    3. Modified Z-Score
+
+    Identifier and year columns are excluded.
+    """
+
+    validate_dataframe(df)
+
+    if z_threshold <= 0 or modified_z_threshold <= 0:
+        raise ValueError("Outlier thresholds must be positive.")
+
+    numeric_columns = df.select_dtypes(
+        include="number"
+    ).columns.tolist()
+
+    results = []
+
+    for column in numeric_columns:
+
+        column_name = str(column).lower()
+
+        # Exclude identifier and year columns
+        if (
+            column_name.endswith("_id")
+            or column_name == "id"
+            or "identifier" in column_name
+            or column_name.endswith("_year")
+        ):
+            continue
+
+        series = pd.to_numeric(
+            df[column], errors="coerce"
+        ).dropna()
+
+        # Remove infinite values
+        series = series[np.isfinite(series)]
+
+        if len(series) < 4:
+            continue
+
+        def add_result(method, outliers, lower, upper):
+
+            results.append({
+                "column": column,
+                "method": method,
+                "total_values": int(len(series)),
+                "outlier_count": int(outliers.sum()),
+                "outlier_percentage": round(
+                    outliers.sum() / len(series) * 100, 2
+                ),
+                "lower_bound": (
+                    round(float(lower), 2)
+                    if np.isfinite(lower) else None
+                ),
+                "upper_bound": (
+                    round(float(upper), 2)
+                    if np.isfinite(upper) else None
+                )
+            })
+
+        # --------------------------------------------------
+        # METHOD 1: IQR
+        # --------------------------------------------------
+
+        q1 = series.quantile(0.25)
+        q3 = series.quantile(0.75)
+        iqr = q3 - q1
+
+        if iqr > 0:
+
+            lower = q1 - (1.5 * iqr)
+            upper = q3 + (1.5 * iqr)
+
+            outliers = (
+                (series < lower) | (series > upper)
+            )
+
+            add_result("IQR", outliers, lower, upper)
+
+        # --------------------------------------------------
+        # METHOD 2: Z-SCORE
+        # --------------------------------------------------
+
+        mean = series.mean()
+        std = series.std(ddof=0)
+
+        if std > 0:
+
+            z_scores = (series - mean) / std
+
+            outliers = z_scores.abs() > z_threshold
+
+            lower = mean - (z_threshold * std)
+            upper = mean + (z_threshold * std)
+
+            add_result("Z-Score", outliers, lower, upper)
+
+        # --------------------------------------------------
+        # METHOD 3: MODIFIED Z-SCORE
+        # --------------------------------------------------
+
+        median = series.median()
+
+        mad = (series - median).abs().median()
+
+        if mad > 0:
+
+            modified_z_scores = (
+                0.6745 * (series - median) / mad
+            )
+
+            outliers = (
+                modified_z_scores.abs() > modified_z_threshold
+            )
+
+            lower = (
+                median -
+                (modified_z_threshold * mad / 0.6745)
+            )
+
+            upper = (
+                median +
+                (modified_z_threshold * mad / 0.6745)
+            )
+
+            add_result(
+                "Modified Z-Score",
+                outliers,
+                lower,
+                upper
+            )
+
+    return pd.DataFrame(
+        results,
+        columns=[
+            "column",
+            "method",
+            "total_values",
+            "outlier_count",
+            "outlier_percentage",
+            "lower_bound",
+            "upper_bound"
+        ]
+    )
+
+
+# ==========================================================
+# 8. DATA QUALITY SCORING
+# ==========================================================
+
+def calculate_data_quality_score(df: pd.DataFrame) -> dict:
+    """
+    Calculate overall dataset and individual column
+    quality scores using:
+
+    1. Completeness - 50%
+    2. Uniqueness - 25%
+    3. Outlier Health - 25%
+
+    Unavailable components are excluded and remaining
+    weights are proportionally adjusted.
+    """
+
+    validate_dataframe(df)
+
+    total_rows, total_columns = df.shape
+    total_cells = total_rows * total_columns
+
+    # ------------------------------------------------------
+    # 1. COMPLETENESS SCORE
+    # ------------------------------------------------------
+
+    missing_cells = int(df.isna().sum().sum())
+
+    completeness_score = round(
+        (1 - missing_cells / total_cells) * 100, 2
+    )
+
+    # ------------------------------------------------------
+    # 2. UNIQUENESS SCORE
+    # ------------------------------------------------------
+
+    duplicate_rows = int(df.duplicated().sum())
+
+    uniqueness_score = round(
+        (1 - duplicate_rows / total_rows) * 100, 2
+    )
+
+    # ------------------------------------------------------
+    # 3. OUTLIER HEALTH SCORE
+    # ------------------------------------------------------
+
+    outlier_results = detect_outliers_iqr(df)
+
+    outlier_health_score = None
+    outlier_columns_assessed = 0
+
+    if not outlier_results.empty:
+
+        assessed_values = 0
+        total_outliers = 0
+
+        for _, row in outlier_results.iterrows():
+
+            column = row["column"]
+
+            valid_count = int(df[column].notna().sum())
+
+            assessed_values += valid_count
+            total_outliers += int(row["outlier_count"])
+
+        if assessed_values > 0:
+
+            outlier_health_score = round(
+                max(
+                    0,
+                    100 - (total_outliers / assessed_values * 100)
+                ),
+                2
+            )
+
+            outlier_columns_assessed = len(outlier_results)
+
+    # ------------------------------------------------------
+    # 4. OVERALL DATASET QUALITY SCORE
+    # ------------------------------------------------------
+
+    components = {
+        "completeness": completeness_score,
+        "uniqueness": uniqueness_score
+    }
+
+    weights = {
+        "completeness": 50,
+        "uniqueness": 25
+    }
+
+    if outlier_health_score is not None:
+
+        components["outlier_health"] = outlier_health_score
+        weights["outlier_health"] = 25
+
+    total_weight = sum(weights.values())
+
+    overall_score = round(
+        sum(
+            components[name] * weight
+            for name, weight in weights.items()
+        ) / total_weight,
+        2
+    )
+
+    # ------------------------------------------------------
+    # 5. QUALITY GRADE
+    # ------------------------------------------------------
+
+    def get_grade(score):
+
+        if score >= 90:
+            return "Excellent"
+
+        elif score >= 75:
+            return "Good"
+
+        elif score >= 60:
+            return "Fair"
+
+        return "Poor"
+
+    # ------------------------------------------------------
+    # 6. INDIVIDUAL COLUMN QUALITY SCORES
+    # ------------------------------------------------------
+
+    column_records = []
+
+    outlier_lookup = {}
+
+    if not outlier_results.empty:
+
+        outlier_lookup = {
+            row["column"]: row
+            for _, row in outlier_results.iterrows()
+        }
+
+    for column in df.columns:
+
+        series = df[column]
+
+        missing_percentage = round(
+            series.isna().mean() * 100, 2
+        )
+
+        column_completeness = round(
+            100 - missing_percentage, 2
+        )
+
+        column_outlier_score = None
+        outlier_count = None
+        outlier_percentage = None
+
+        if column in outlier_lookup:
+
+            outlier_row = outlier_lookup[column]
+
+            outlier_count = int(
+                outlier_row["outlier_count"]
+            )
+
+            outlier_percentage = float(
+                outlier_row["outlier_percentage"]
+            )
+
+            column_outlier_score = round(
+                100 - outlier_percentage, 2
+            )
+
+            column_score = round(
+                column_completeness * 0.70 +
+                column_outlier_score * 0.30,
+                2
+            )
+
+        else:
+
+            # No outlier assessment available:
+            # score this column on completeness only.
+            column_score = column_completeness
+
+        column_records.append({
+
+            "column": column,
+
+            "data_type": str(series.dtype),
+
+            "missing_count": int(series.isna().sum()),
+
+            "missing_percentage": missing_percentage,
+
+            "completeness_score": column_completeness,
+
+            "outlier_count": outlier_count,
+
+            "outlier_percentage": outlier_percentage,
+
+            "outlier_score": column_outlier_score,
+
+            "quality_score": column_score,
+
+            "quality_grade": get_grade(column_score)
+
+        })
+
+    column_scores = pd.DataFrame(column_records)
+
+    # ------------------------------------------------------
+    # 7. FINAL QUALITY REPORT
+    # ------------------------------------------------------
+
+    return {
+
+        "overall_score": overall_score,
+
+        "overall_grade": get_grade(overall_score),
+
+        "component_scores": components,
+
+        "total_rows": int(total_rows),
+
+        "total_columns": int(total_columns),
+
+        "total_cells": int(total_cells),
+
+        "missing_cells": missing_cells,
+
+        "duplicate_rows": duplicate_rows,
+
+        "outlier_columns_assessed": outlier_columns_assessed,
+
+        "column_scores": column_scores
+
+    }
