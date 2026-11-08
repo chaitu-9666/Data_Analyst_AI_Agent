@@ -2,7 +2,19 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+
 from src.data_loader import load_csv
+
+from src.profiling import (
+    profile_dataset,
+    get_column_profile,
+    detect_outliers_iqr
+)
+
+
+# ==========================================================
+# 1. PAGE CONFIGURATION
+# ==========================================================
 
 st.set_page_config(
     page_title="Data Analyst AI Agent",
@@ -11,18 +23,29 @@ st.set_page_config(
 )
 
 st.title("📊 Data Analyst AI Agent")
+
 st.write(
     "Upload a CSV file to explore data, identify missing values, "
-    "view statistics, and create interactive visualizations."
+    "view statistics, detect data quality issues, and create "
+    "interactive visualizations."
 )
+
+
+# ==========================================================
+# 2. CSV UPLOAD
+# ==========================================================
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload your CSV dataset",
     type=["csv"]
 )
 
+
 if uploaded_file is None:
-    st.info("Upload a CSV file from the sidebar to get started.")
+
+    st.info(
+        "Upload a CSV file from the sidebar to get started."
+    )
 
     sample = pd.DataFrame({
         "Department": ["IT", "HR", "Sales", "IT", "Sales"],
@@ -32,54 +55,117 @@ if uploaded_file is None:
     })
 
     st.subheader("Example dataset")
-    st.dataframe(sample, use_container_width=True)
+
+    st.dataframe(
+        sample,
+        use_container_width=True
+    )
+
 
 else:
+
     try:
+
         df = load_csv(uploaded_file)
 
         if df.empty or len(df.columns) == 0:
-            st.error("The uploaded CSV contains no data.")
+
+            st.error(
+                "The uploaded CSV contains no data."
+            )
+
             st.stop()
 
-        st.success("Dataset uploaded successfully!")
+        st.success(
+            "Dataset uploaded successfully!"
+        )
 
-        overview, preview, missing, charts = st.tabs([
+
+        # ==================================================
+        # 3. GENERATE DATA PROFILES
+        # ==================================================
+
+        profile = profile_dataset(df)
+
+        column_profile = get_column_profile(df)
+
+        outlier_profile = detect_outliers_iqr(df)
+
+
+        # ==================================================
+        # 4. APPLICATION TABS
+        # ==================================================
+
+        overview, preview, missing, quality, charts = st.tabs([
             "Overview",
             "Data Preview",
             "Missing Values",
+            "Data Quality",
             "Visualizations"
         ])
 
+
+        # ==================================================
+        # 5. OVERVIEW TAB
+        # ==================================================
+
         with overview:
+
             st.subheader("Dataset Overview")
 
             col1, col2, col3 = st.columns(3)
-            col1.metric("Rows", df.shape[0])
-            col2.metric("Columns", df.shape[1])
-            col3.metric(
-                "Missing Cells",
-                int(df.isna().sum().sum())
+
+            col1.metric(
+                "Rows",
+                f"{df.shape[0]:,}"
             )
 
+            col2.metric(
+                "Columns",
+                df.shape[1]
+            )
+
+            col3.metric(
+                "Missing Cells",
+                f"{profile['missing_cells']:,}"
+            )
+
+            st.divider()
+
             st.subheader("Statistical Summary")
+
             st.dataframe(
                 df.describe(include="all").T,
                 use_container_width=True
             )
 
             st.subheader("Column Information")
+
             info = pd.DataFrame({
                 "Column": df.columns,
                 "Data Type": df.dtypes.astype(str).values,
                 "Missing Values": df.isna().sum().values,
                 "Unique Values": df.nunique().values
             })
-            st.dataframe(info, use_container_width=True)
+
+            st.dataframe(
+                info,
+                use_container_width=True
+            )
+
+
+        # ==================================================
+        # 6. DATA PREVIEW TAB
+        # ==================================================
 
         with preview:
+
             st.subheader("Explore Your Data")
-            st.dataframe(df, use_container_width=True)
+
+            st.dataframe(
+                df,
+                use_container_width=True
+            )
 
             st.download_button(
                 "Download dataset",
@@ -88,7 +174,13 @@ else:
                 mime="text/csv"
             )
 
+
+        # ==================================================
+        # 7. MISSING VALUES TAB
+        # ==================================================
+
         with missing:
+
             st.subheader("Missing Value Analysis")
 
             missing_df = pd.DataFrame({
@@ -99,25 +191,288 @@ else:
                 ).round(2)
             })
 
-            st.dataframe(missing_df, use_container_width=True)
+            st.dataframe(
+                missing_df,
+                use_container_width=True
+            )
 
             missing_only = missing_df[
                 missing_df["Missing Values"] > 0
-            ]
+            ].sort_values(
+                by="Missing Percentage",
+                ascending=False
+            )
 
             if not missing_only.empty:
+
                 fig = px.bar(
                     missing_only,
                     x="Column",
-                    y="Missing Values",
-                    title="Missing Values by Column"
+                    y="Missing Percentage",
+                    hover_data=["Missing Values"],
+                    title="Missing Values by Column (%)"
                 )
-                st.plotly_chart(fig, use_container_width=True)
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
             else:
-                st.success("No missing values found!")
+
+                st.success(
+                    "No missing values found!"
+                )
+
+
+        # ==================================================
+        # 8. DATA QUALITY TAB
+        # ==================================================
+
+        with quality:
+
+            st.subheader(
+                "Automated Data Profiling"
+            )
+
+            # ----------------------------------------------
+            # Dataset metrics
+            # ----------------------------------------------
+
+            c1, c2, c3, c4 = st.columns(4)
+
+            c1.metric(
+                "Total Rows",
+                f"{profile['total_rows']:,}"
+            )
+
+            c2.metric(
+                "Total Columns",
+                profile["total_columns"]
+            )
+
+            c3.metric(
+                "Duplicate Rows",
+                profile["duplicate_rows"]
+            )
+
+            c4.metric(
+                "Data Completeness",
+                f"{100 - profile['missing_percentage']:.2f}%"
+            )
+
+            st.divider()
+
+
+            # ----------------------------------------------
+            # Column classification
+            # ----------------------------------------------
+
+            st.subheader(
+                "Column Classification"
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            col1.metric(
+                "Numeric Columns",
+                len(profile["numeric_columns"])
+            )
+
+            col2.metric(
+                "Categorical Columns",
+                len(profile["categorical_columns"])
+            )
+
+            col3.metric(
+                "Datetime Columns",
+                len(profile["datetime_columns"])
+            )
+
+            col4.metric(
+                "Time Columns",
+                len(profile["time_columns"])
+            )
+
+            with st.expander(
+                "View classified columns"
+            ):
+
+                st.write(
+                    "Numeric:",
+                    profile["numeric_columns"]
+                )
+
+                st.write(
+                    "Categorical:",
+                    profile["categorical_columns"]
+                )
+
+                st.write(
+                    "Datetime:",
+                    profile["datetime_columns"]
+                )
+
+                st.write(
+                    "Time:",
+                    profile["time_columns"]
+                )
+
+            st.divider()
+
+
+            # ----------------------------------------------
+            # Advanced column profiling
+            # ----------------------------------------------
+
+            st.subheader(
+                "Advanced Column Analysis"
+            )
+
+            st.caption(
+                "Detailed statistics for every dataset column."
+            )
+
+            st.dataframe(
+                column_profile,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.divider()
+
+
+            # ----------------------------------------------
+            # Outlier detection
+            # ----------------------------------------------
+
+            st.subheader(
+                "Outlier Detection (IQR Method)"
+            )
+
+            if not outlier_profile.empty:
+
+                st.dataframe(
+                    outlier_profile,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                total_outliers = int(
+                    outlier_profile["outlier_count"].sum()
+                )
+
+                st.info(
+                    f"Potential numerical outliers detected: "
+                    f"{total_outliers:,}"
+                )
+
+                fig = px.bar(
+                    outlier_profile.sort_values(
+                        "outlier_count",
+                        ascending=False
+                    ),
+                    x="column",
+                    y="outlier_count",
+                    title="Potential Outliers by Column"
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Outliers are statistical observations, not "
+                    "automatically incorrect records."
+                )
+
+            else:
+
+                st.success(
+                    "No suitable numerical columns available "
+                    "for outlier analysis."
+                )
+
+            st.divider()
+
+
+            # ----------------------------------------------
+            # Data quality observations
+            # ----------------------------------------------
+
+            st.subheader(
+                "Data Quality Observations"
+            )
+
+            if profile["missing_cells"] > 0:
+
+                st.warning(
+                    f"{profile['missing_cells']:,} missing cells "
+                    f"found ({profile['missing_percentage']}%)."
+                )
+
+            else:
+
+                st.success(
+                    "No missing values detected."
+                )
+
+
+            if profile["duplicate_rows"] > 0:
+
+                st.warning(
+                    f"{profile['duplicate_rows']:,} duplicate "
+                    "rows found. Review before removing."
+                )
+
+            else:
+
+                st.success(
+                    "No duplicate rows detected."
+                )
+
+
+            if not outlier_profile.empty:
+
+                if total_outliers > 0:
+
+                    st.warning(
+                        "Potential outliers require further investigation."
+                    )
+
+                else:
+
+                    st.success(
+                        "No potential outliers detected."
+                    )
+
+
+            if profile["datetime_columns"]:
+
+                st.success(
+                    "Datetime columns identified: "
+                    + ", ".join(profile["datetime_columns"])
+                )
+
+
+            if profile["time_columns"]:
+
+                st.success(
+                    "Time columns identified: "
+                    + ", ".join(profile["time_columns"])
+                )
+
+
+        # ==================================================
+        # 9. VISUALIZATIONS TAB
+        # ==================================================
 
         with charts:
-            st.subheader("Create a Visualization")
+
+            st.subheader(
+                "Create a Visualization"
+            )
 
             numeric_columns = df.select_dtypes(
                 include="number"
@@ -125,33 +480,63 @@ else:
 
             chart_type = st.selectbox(
                 "Choose chart type",
-                ["Histogram", "Bar Chart", "Scatter Plot", "Line Chart"]
+                [
+                    "Histogram",
+                    "Bar Chart",
+                    "Scatter Plot",
+                    "Line Chart"
+                ]
             )
 
+
+            # Histogram
+
             if chart_type == "Histogram":
+
                 column = st.selectbox(
                     "Select a numeric column",
                     numeric_columns
                 ) if numeric_columns else None
 
                 if column:
+
                     fig = px.histogram(
-                        df, x=column, title=f"Distribution of {column}"
+                        df,
+                        x=column,
+                        title=f"Distribution of {column}"
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
                 else:
-                    st.warning("No numeric columns are available.")
+
+                    st.warning(
+                        "No numeric columns are available."
+                    )
+
+
+            # Bar chart
 
             elif chart_type == "Bar Chart":
-                x_col = st.selectbox("Category column", df.columns.tolist())
+
+                x_col = st.selectbox(
+                    "Category column",
+                    df.columns.tolist()
+                )
+
                 y_col = st.selectbox(
                     "Numeric value column",
                     numeric_columns
                 ) if numeric_columns else None
 
                 if y_col:
+
                     grouped = df.groupby(
-                        x_col, dropna=False
+                        x_col,
+                        dropna=False
                     )[y_col].mean().reset_index()
 
                     fig = px.bar(
@@ -160,32 +545,69 @@ else:
                         y=y_col,
                         title=f"Average {y_col} by {x_col}"
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
                 else:
-                    st.warning("A numeric column is required.")
+
+                    st.warning(
+                        "A numeric column is required."
+                    )
+
+
+            # Scatter plot and line chart
 
             else:
+
                 if len(numeric_columns) >= 2:
+
                     x_col = st.selectbox(
-                        "X-axis", numeric_columns, index=0
+                        "X-axis",
+                        numeric_columns,
+                        index=0
                     )
+
                     y_col = st.selectbox(
                         "Y-axis",
                         numeric_columns,
-                        index=1 if len(numeric_columns) > 1 else 0
+                        index=1
                     )
 
                     if chart_type == "Scatter Plot":
-                        fig = px.scatter(df, x=x_col, y=y_col)
-                    else:
-                        fig = px.line(df, x=x_col, y=y_col)
 
-                    st.plotly_chart(fig, use_container_width=True)
+                        fig = px.scatter(
+                            df,
+                            x=x_col,
+                            y=y_col,
+                            title=f"{y_col} vs {x_col}"
+                        )
+
+                    else:
+
+                        fig = px.line(
+                            df,
+                            x=x_col,
+                            y=y_col,
+                            title=f"{y_col} over {x_col}"
+                        )
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
                 else:
+
                     st.warning(
                         "At least two numeric columns are required."
                     )
 
-    except Exception as error:
-        st.error(f"Unable to read or analyse this CSV: {error}")
 
+    except Exception as error:
+
+        st.error(
+            f"Unable to read or analyse this CSV: {error}"
+        )
