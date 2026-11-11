@@ -1,10 +1,8 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
 from src.data_loader import load_csv
-
 from src.profiling import (
     profile_dataset,
     get_column_profile,
@@ -12,6 +10,9 @@ from src.profiling import (
     calculate_data_quality_score,
     generate_data_quality_insights
 )
+
+# Stage 3: Natural Language Understanding
+from src.nlu.query_understanding import understand_query
 
 
 # ==========================================================
@@ -42,7 +43,6 @@ uploaded_file = st.sidebar.file_uploader(
     type=["csv"]
 )
 
-
 if uploaded_file is None:
 
     st.info(
@@ -63,7 +63,6 @@ if uploaded_file is None:
         use_container_width=True
     )
 
-
 else:
 
     try:
@@ -82,7 +81,6 @@ else:
             "Dataset uploaded successfully!"
         )
 
-
         # ==================================================
         # 3. GENERATE DATA PROFILES
         # ==================================================
@@ -97,19 +95,18 @@ else:
 
         quality_insights = generate_data_quality_insights(df)
 
-
         # ==================================================
         # 4. APPLICATION TABS
         # ==================================================
 
-        overview, preview, missing, quality, charts = st.tabs([
+        overview, preview, missing, quality, charts, assistant = st.tabs([
             "Overview",
             "Data Preview",
             "Missing Values",
             "Data Quality",
-            "Visualizations"
+            "Visualizations",
+            "AI Assistant"
         ])
-
 
         # ==================================================
         # 5. OVERVIEW TAB
@@ -159,7 +156,6 @@ else:
                 use_container_width=True
             )
 
-
         # ==================================================
         # 6. DATA PREVIEW TAB
         # ==================================================
@@ -179,7 +175,6 @@ else:
                 file_name="analysed_dataset.csv",
                 mime="text/csv"
             )
-
 
         # ==================================================
         # 7. MISSING VALUES TAB
@@ -230,20 +225,15 @@ else:
                     "No missing values found!"
                 )
 
-
         # ==================================================
         # 8. DATA QUALITY TAB
         # ==================================================
 
         with quality:
 
-            st.subheader(
-                "Automated Data Profiling"
-            )
+            st.subheader("Automated Data Profiling")
 
-            # ----------------------------------------------
             # Dataset metrics
-            # ----------------------------------------------
 
             c1, c2, c3, c4 = st.columns(4)
 
@@ -269,9 +259,7 @@ else:
 
             st.divider()
 
-            # ----------------------------------------------
-            # DATA QUALITY SCORE
-            # ----------------------------------------------
+            # Data quality score
 
             st.subheader("Overall Data Quality Score")
 
@@ -282,6 +270,7 @@ else:
 
             c1.metric("Quality Score", f"{score}/100")
             c2.metric("Quality Grade", grade)
+
             c3.metric(
                 "Total Quality Issues",
                 quality_insights["total_insights"]
@@ -293,10 +282,7 @@ else:
 
             st.divider()
 
-
-            # ----------------------------------------------
-            # COLUMN QUALITY SCORES
-            # ----------------------------------------------
+            # Column quality scores
 
             st.subheader("Column-wise Quality Scores")
 
@@ -308,10 +294,7 @@ else:
 
             st.divider()
 
-
-            # ----------------------------------------------
-            # AUTOMATED DATA QUALITY INSIGHTS
-            # ----------------------------------------------
+            # Automated data quality insights
 
             st.subheader("Automated Data Quality Insights")
 
@@ -331,10 +314,7 @@ else:
 
                 st.success("No data quality issues detected!")
 
-
-            # ----------------------------------------------
-            # RECOMMENDATIONS
-            # ----------------------------------------------
+            # Recommendations
 
             st.subheader("Recommended Actions")
 
@@ -348,10 +328,7 @@ else:
 
                 st.success("No corrective actions required.")
 
-
-            # ----------------------------------------------
-            # DATASET STRENGTHS
-            # ----------------------------------------------
+            # Dataset strengths
 
             st.subheader("Dataset Strengths")
 
@@ -361,15 +338,9 @@ else:
 
             st.divider()
 
-
-
-            # ----------------------------------------------
             # Column classification
-            # ----------------------------------------------
 
-            st.subheader(
-                "Column Classification"
-            )
+            st.subheader("Column Classification")
 
             col1, col2, col3, col4 = st.columns(4)
 
@@ -393,9 +364,7 @@ else:
                 len(profile["time_columns"])
             )
 
-            with st.expander(
-                "View classified columns"
-            ):
+            with st.expander("View classified columns"):
 
                 st.write(
                     "Numeric:",
@@ -419,14 +388,9 @@ else:
 
             st.divider()
 
-
-            # ----------------------------------------------
             # Advanced column profiling
-            # ----------------------------------------------
 
-            st.subheader(
-                "Advanced Column Analysis"
-            )
+            st.subheader("Advanced Column Analysis")
 
             st.caption(
                 "Detailed statistics for every dataset column."
@@ -440,14 +404,9 @@ else:
 
             st.divider()
 
-
-            # ----------------------------------------------
             # Outlier detection
-            # ----------------------------------------------
 
-            st.subheader(
-                "Outlier Detection (IQR Method)"
-            )
+            st.subheader("Outlier Detection (IQR Method)")
 
             if not outlier_profile.empty:
 
@@ -495,14 +454,9 @@ else:
 
             st.divider()
 
-
-            # ----------------------------------------------
             # Data quality observations
-            # ----------------------------------------------
 
-            st.subheader(
-                "Data Quality Observations"
-            )
+            st.subheader("Data Quality Observations")
 
             if profile["missing_cells"] > 0:
 
@@ -513,10 +467,7 @@ else:
 
             else:
 
-                st.success(
-                    "No missing values detected."
-                )
-
+                st.success("No missing values detected.")
 
             if profile["duplicate_rows"] > 0:
 
@@ -527,10 +478,7 @@ else:
 
             else:
 
-                st.success(
-                    "No duplicate rows detected."
-                )
-
+                st.success("No duplicate rows detected.")
 
             if not outlier_profile.empty:
 
@@ -542,10 +490,7 @@ else:
 
                 else:
 
-                    st.success(
-                        "No potential outliers detected."
-                    )
-
+                    st.success("No potential outliers detected.")
 
             if profile["datetime_columns"]:
 
@@ -554,7 +499,6 @@ else:
                     + ", ".join(profile["datetime_columns"])
                 )
 
-
             if profile["time_columns"]:
 
                 st.success(
@@ -562,16 +506,13 @@ else:
                     + ", ".join(profile["time_columns"])
                 )
 
-
         # ==================================================
         # 9. VISUALIZATIONS TAB
         # ==================================================
 
         with charts:
 
-            st.subheader(
-                "Create a Visualization"
-            )
+            st.subheader("Create a Visualization")
 
             numeric_columns = df.select_dtypes(
                 include="number"
@@ -586,7 +527,6 @@ else:
                     "Line Chart"
                 ]
             )
-
 
             # Histogram
 
@@ -615,7 +555,6 @@ else:
                     st.warning(
                         "No numeric columns are available."
                     )
-
 
             # Bar chart
 
@@ -655,7 +594,6 @@ else:
                     st.warning(
                         "A numeric column is required."
                     )
-
 
             # Scatter plot and line chart
 
@@ -704,6 +642,110 @@ else:
                         "At least two numeric columns are required."
                     )
 
+        # ==================================================
+        # 10. STAGE 3: NATURAL LANGUAGE UNDERSTANDING
+        # ==================================================
+
+        with assistant:
+
+            st.subheader("AI Data Analyst Assistant")
+
+            st.write(
+                "Ask questions about your uploaded dataset "
+                "using natural language."
+            )
+
+            st.caption(
+                "Stage 3 interprets your question. It does not "
+                "execute analysis operations yet."
+            )
+
+            if "nlu_result" not in st.session_state:
+                st.session_state["nlu_result"] = None
+
+            if "nlu_question" not in st.session_state:
+                st.session_state["nlu_question"] = ""
+
+            user_query = st.chat_input(
+                "Ask something about your dataset...",
+                key="nlu_chat_input"
+            )
+
+            if user_query:
+
+                try:
+
+                    result = understand_query(
+                        user_query,
+                        df
+                    )
+
+                    st.session_state["nlu_result"] = result
+
+                    st.session_state["nlu_question"] = user_query
+
+                except Exception as nlu_error:
+
+                    st.error(
+                        f"NLU processing error: {nlu_error}"
+                    )
+
+                    st.session_state["nlu_result"] = None
+
+            result = st.session_state.get("nlu_result")
+
+            if result:
+
+                st.markdown("#### Your question")
+
+                st.write(
+                    st.session_state.get("nlu_question", "")
+                )
+
+                metric_col, intent_col = st.columns(2)
+
+                metric_col.metric(
+                    "Confidence Score",
+                    f"{result.get('confidence', 0):.2f}"
+                )
+
+                intent_col.metric(
+                    "Detected Intent",
+                    result.get("intent", "UNKNOWN")
+                )
+
+                if result.get("needs_clarification", False):
+
+                    st.warning(
+                        result.get(
+                            "clarification_question",
+                            "I could not confidently understand "
+                            "your question. Please rephrase it."
+                        )
+                    )
+
+                else:
+
+                    st.success(
+                        "Your question was successfully interpreted!"
+                    )
+
+                st.markdown("#### Extracted Entities")
+
+                st.json(
+                    result.get("entities", {})
+                )
+
+                with st.expander("View Complete NLU Output"):
+
+                    st.json(result)
+
+            else:
+
+                st.info(
+                    "Enter a question above to see its detected "
+                    "intent and extracted entities."
+                )
 
     except Exception as error:
 
