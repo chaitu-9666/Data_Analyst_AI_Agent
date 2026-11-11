@@ -116,3 +116,71 @@ def get_correlation_matrix(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     return numeric_df.corr()
+
+
+def get_column_aggregation(
+    df: pd.DataFrame,
+    column: str,
+    aggregation: str
+):
+    """
+    Perform a supported aggregation on a DataFrame column.
+
+    Supported operations:
+    sum, mean, median, count, min, max
+    """
+
+    validate_dataframe(df)
+
+    supported_aggregations = {
+        "sum",
+        "mean",
+        "median",
+        "count",
+        "min",
+        "max"
+    }
+
+    if aggregation not in supported_aggregations:
+        raise ValueError(
+            f"Unsupported aggregation: {aggregation}"
+        )
+
+    if column not in df.columns:
+        raise ValueError(
+            f"Column '{column}' does not exist."
+        )
+
+    # Count works with numerical and categorical columns.
+    if aggregation == "count":
+        return int(df[column].count())
+
+    # Check for missing values before checking the data type.
+    valid_values = df[column].dropna()
+
+    if valid_values.empty:
+        raise ValueError(
+            f"Column '{column}' has no valid values."
+        )
+
+    # Other aggregations require numerical data.
+    if not pd.api.types.is_numeric_dtype(df[column]):
+        raise TypeError(
+            f"Column '{column}' must be numerical "
+            f"for {aggregation}."
+        )
+
+    if aggregation == "sum":
+        return float(valid_values.sum())
+
+    if aggregation == "mean":
+        return float(valid_values.mean())
+
+    if aggregation == "median":
+        return float(valid_values.median())
+
+    if aggregation == "min":
+        return float(valid_values.min())
+
+    if aggregation == "max":
+        return float(valid_values.max())

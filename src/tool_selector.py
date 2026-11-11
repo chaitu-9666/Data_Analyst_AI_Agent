@@ -7,6 +7,7 @@ ALLOWED_TOOLS = {
     "get_numeric_summary",
     "get_top_records",
     "get_column_average",
+    "get_column_aggregation",
     "get_correlation_matrix",
 }
 
@@ -15,26 +16,29 @@ TOOL_MAPPING = {
     "MISSING_VALUES": "get_missing_values",
     "CORRELATION": "get_correlation_matrix",
     "TOP_N": "get_top_records",
-    "AGGREGATION": "get_numeric_summary",
 }
 
 
 def select_tool(intent, entities=None):
-    """
-    Select an approved analysis tool.
-
-    Returns a dictionary containing the selected tool,
-    its status, and any parameters still needed.
-    """
-
     entities = entities or {}
 
     tool_name = TOOL_MAPPING.get(intent)
 
-    # Select the specific average tool for mean questions.
+    # Select an approved tool for aggregation requests.
     if intent == "AGGREGATION":
-        if entities.get("aggregation") == "mean":
+        aggregation = entities.get("aggregation")
+
+        if aggregation == "mean":
             tool_name = "get_column_average"
+
+        elif aggregation in {
+            "sum",
+            "median",
+            "count",
+            "min",
+            "max",
+        }:
+            tool_name = "get_column_aggregation"
 
     if tool_name is None:
         return {
@@ -43,7 +47,6 @@ def select_tool(intent, entities=None):
             "required_parameters": [],
         }
 
-    # Security check: only approved tools can be selected.
     if tool_name not in ALLOWED_TOOLS:
         return {
             "tool_name": None,
@@ -53,11 +56,18 @@ def select_tool(intent, entities=None):
 
     required_parameters = []
 
-    if tool_name in ("get_top_records", "get_column_average"):
+    if tool_name in (
+        "get_top_records",
+        "get_column_average",
+        "get_column_aggregation",
+    ):
         required_parameters.append("column")
 
     if tool_name == "get_top_records":
         required_parameters.append("n")
+
+    if tool_name == "get_column_aggregation":
+        required_parameters.append("aggregation")
 
     missing_parameters = [
         parameter
@@ -67,6 +77,10 @@ def select_tool(intent, entities=None):
 
     return {
         "tool_name": tool_name,
-        "status": "needs_parameters" if missing_parameters else "selected",
+        "status": (
+            "needs_parameters"
+            if missing_parameters
+            else "selected"
+        ),
         "required_parameters": missing_parameters,
     }
