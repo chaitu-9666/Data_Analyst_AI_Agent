@@ -14,6 +14,9 @@ from src.profiling import (
 # Stage 3: Natural Language Understanding
 from src.nlu.query_understanding import understand_query
 
+# Stage 5: Safe natural-language analysis execution
+from src.analysis_pipeline import run_analysis
+
 
 # ==========================================================
 # 1. PAGE CONFIGURATION
@@ -233,8 +236,6 @@ else:
 
             st.subheader("Automated Data Profiling")
 
-            # Dataset metrics
-
             c1, c2, c3, c4 = st.columns(4)
 
             c1.metric(
@@ -259,8 +260,6 @@ else:
 
             st.divider()
 
-            # Data quality score
-
             st.subheader("Overall Data Quality Score")
 
             score = quality_report["overall_score"]
@@ -282,8 +281,6 @@ else:
 
             st.divider()
 
-            # Column quality scores
-
             st.subheader("Column-wise Quality Scores")
 
             st.dataframe(
@@ -293,8 +290,6 @@ else:
             )
 
             st.divider()
-
-            # Automated data quality insights
 
             st.subheader("Automated Data Quality Insights")
 
@@ -314,8 +309,6 @@ else:
 
                 st.success("No data quality issues detected!")
 
-            # Recommendations
-
             st.subheader("Recommended Actions")
 
             if quality_insights["recommendations"]:
@@ -328,8 +321,6 @@ else:
 
                 st.success("No corrective actions required.")
 
-            # Dataset strengths
-
             st.subheader("Dataset Strengths")
 
             for strength in quality_insights["strengths"]:
@@ -337,8 +328,6 @@ else:
                 st.success(strength)
 
             st.divider()
-
-            # Column classification
 
             st.subheader("Column Classification")
 
@@ -388,8 +377,6 @@ else:
 
             st.divider()
 
-            # Advanced column profiling
-
             st.subheader("Advanced Column Analysis")
 
             st.caption(
@@ -403,8 +390,6 @@ else:
             )
 
             st.divider()
-
-            # Outlier detection
 
             st.subheader("Outlier Detection (IQR Method)")
 
@@ -453,8 +438,6 @@ else:
                 )
 
             st.divider()
-
-            # Data quality observations
 
             st.subheader("Data Quality Observations")
 
@@ -528,8 +511,6 @@ else:
                 ]
             )
 
-            # Histogram
-
             if chart_type == "Histogram":
 
                 column = st.selectbox(
@@ -555,8 +536,6 @@ else:
                     st.warning(
                         "No numeric columns are available."
                     )
-
-            # Bar chart
 
             elif chart_type == "Bar Chart":
 
@@ -594,8 +573,6 @@ else:
                     st.warning(
                         "A numeric column is required."
                     )
-
-            # Scatter plot and line chart
 
             else:
 
@@ -643,7 +620,7 @@ else:
                     )
 
         # ==================================================
-        # 10. STAGE 3: NATURAL LANGUAGE UNDERSTANDING
+        # 10. STAGE 3 + STAGE 5: AI DATA ANALYST ASSISTANT
         # ==================================================
 
         with assistant:
@@ -656,44 +633,73 @@ else:
             )
 
             st.caption(
-                "Stage 3 interprets your question. It does not "
-                "execute analysis operations yet."
+                "The assistant interprets your question, selects "
+                "an approved analysis tool, and executes it safely."
             )
 
+            # Initialize session state
             if "nlu_result" not in st.session_state:
                 st.session_state["nlu_result"] = None
 
             if "nlu_question" not in st.session_state:
                 st.session_state["nlu_question"] = ""
 
+            if "analysis_result" not in st.session_state:
+                st.session_state["analysis_result"] = None
+
+            # Accept a natural-language question
             user_query = st.chat_input(
                 "Ask something about your dataset...",
                 key="nlu_chat_input"
             )
 
+            # Process a new question
             if user_query:
 
                 try:
 
-                    result = understand_query(
+                    # Stage 3: Understand the question
+                    nlu_result = understand_query(
                         user_query,
                         df
                     )
 
-                    st.session_state["nlu_result"] = result
-
+                    st.session_state["nlu_result"] = nlu_result
                     st.session_state["nlu_question"] = user_query
+                    st.session_state["analysis_result"] = None
 
-                except Exception as nlu_error:
+                    # Stage 5: Execute the analysis
+                    if not nlu_result.get(
+                        "needs_clarification",
+                        False
+                    ):
+
+                        analysis_result = run_analysis(
+                            user_query,
+                            df
+                        )
+
+                        st.session_state["analysis_result"] = (
+                            analysis_result
+                        )
+
+                except Exception as error:
 
                     st.error(
-                        f"NLU processing error: {nlu_error}"
+                        f"Analysis processing error: {error}"
                     )
 
                     st.session_state["nlu_result"] = None
+                    st.session_state["analysis_result"] = None
 
+            # Retrieve stored results
             result = st.session_state.get("nlu_result")
 
+            analysis_result = st.session_state.get(
+                "analysis_result"
+            )
+
+            # Display NLU results
             if result:
 
                 st.markdown("#### Your question")
@@ -739,6 +745,98 @@ else:
                 with st.expander("View Complete NLU Output"):
 
                     st.json(result)
+
+                # ==========================================
+                # STAGE 5: DISPLAY EXECUTION RESULTS
+                # ==========================================
+
+                if analysis_result:
+
+                    st.divider()
+
+                    st.markdown("### Analysis Execution")
+
+                    execution_status = analysis_result.get(
+                        "status"
+                    )
+
+                    if execution_status == "success":
+
+                        st.success(
+                            "Analysis executed successfully!"
+                        )
+
+                        execution = (
+                            analysis_result.get("execution") or {}
+                        )
+
+                        calculated_result = execution.get("result")
+
+                        # Display DataFrame results
+                        if isinstance(
+                            calculated_result,
+                            pd.DataFrame
+                        ):
+
+                            st.dataframe(
+                                calculated_result,
+                                use_container_width=True
+                            )
+
+                        # Display numerical results
+                        elif isinstance(
+                            calculated_result,
+                            (int, float)
+                        ) and not isinstance(
+                            calculated_result,
+                            bool
+                        ):
+
+                            st.metric(
+                                "Calculated Result",
+                                f"{calculated_result:,.2f}"
+                            )
+
+                        # Display dictionary results
+                        elif isinstance(calculated_result, dict):
+
+                            st.json(calculated_result)
+
+                        # Display other results
+                        else:
+
+                            st.write(calculated_result)
+
+                        st.caption(
+                            "Executed tool: "
+                            f"{execution.get('tool_name', 'Unknown')}"
+                        )
+
+                    elif execution_status == "needs_parameters":
+
+                        st.warning(
+                            "This question needs additional information "
+                            "before it can be executed. Try naming the "
+                            "column you want to analyse."
+                        )
+
+                    elif execution_status == "unsupported":
+
+                        st.warning(
+                            "This type of analysis is not supported yet. "
+                            "Try asking for a dataset overview, missing "
+                            "values, a numeric summary, a correlation, "
+                            "top records, or a column aggregation."
+                        )
+
+                    else:
+
+                        st.error(
+                            analysis_result.get(
+                                "message",
+                                "Analysis execution failed."
+                            )
+                        )
 
             else:
 
